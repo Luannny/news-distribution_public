@@ -1,0 +1,37 @@
+name: Test Gmail Delivery
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  test-email:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Send one configuration test email
+        env:
+          EMAIL_HOST: smtp.gmail.com
+          EMAIL_PORT: '587'
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_FROM: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+        run: |
+          python - <<'PY'
+          from src.email_sender import send_email
+          send_email(
+              '每日新闻简报：邮箱配置测试',
+              '<h2>邮箱配置测试</h2><p>这是一封配置测试邮件。收到此邮件说明 Gmail 发件和收件设置已打通。</p><p>本次测试未调用 OpenAI API，也不是正式新闻简报。</p>',
+          )
+          print('SMTP_ACCEPTED: test email accepted by Gmail.')
+          PY
