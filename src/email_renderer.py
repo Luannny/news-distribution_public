@@ -10,6 +10,10 @@ from .vix import VixSnapshot
 
 def render_email_html(brief_date: date, vix: VixSnapshot, content: BriefContent) -> str:
     vix_value = f"{vix.value:.2f}" if vix.value is not None else "N/A"
+    vix_data_note = (
+        f'<p style="font-size:13px;line-height:1.6;margin:8px 0 0;color:#6b7280;">数据日期：{escape(vix.as_of)} · 来源：{escape(vix.source)}</p>'
+        if vix.as_of else ""
+    )
     stories_html = "\n".join(
         _render_story(index, story) for index, story in enumerate(content.stories, start=1)
     )
@@ -35,6 +39,7 @@ def render_email_html(brief_date: date, vix: VixSnapshot, content: BriefContent)
       <h2 style="font-size:21px;line-height:1.3;margin:0 0 12px;font-weight:750;">市场温度</h2>
       <p style="font-size:20px;line-height:1.35;margin:0 0 8px;"><strong>VIX:</strong> {vix_value}</p>
       <p style="font-size:16px;line-height:1.7;margin:0;color:#374151;">{escape(vix.interpretation)}</p>
+      {vix_data_note}
     </section>
 
     <section style="padding:22px 0 18px;border-bottom:1px solid #d1d5db;">
