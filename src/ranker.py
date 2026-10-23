@@ -27,6 +27,8 @@ Include China-US or other political developments only when they have a direct an
 For company stories, favor consequential earnings surprises, guidance changes, major products, acquisitions, leadership changes, regulatory actions, production disruptions, or strategic shifts at widely followed companies in any country.
 Exclude minor feature updates, technical changelogs, routine announcements, entertainment, sports, and celebrity news unless historically significant.
 Exclude stock-picking advice, predictions, listicles, routine market recaps, weekly calendars, and articles whose main purpose is telling readers what to buy.
+Require a concrete new event: an announcement, filing, transaction, earnings release, product launch, official data release, or policy decision. A recently published analysis of an ongoing trend is not itself a new event.
+Exclude generic industry comparisons, competitiveness commentary, expert forecasts, investment outlooks, and commentary by former officials. Prefer original reporting and official releases over aggregators. Do not select a weak story just to fill a category.
 Return strict JSON only."""
 
 OPENAI_CANDIDATE_LIMIT = 50
