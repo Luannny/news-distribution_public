@@ -74,12 +74,12 @@ def _render_story(index: int, story) -> str:
         <p style="font-size:14px;line-height:1.5;margin:0 0 14px;color:#6b7280;">来源：{source_label}</p>
 
         <div style="margin:0 0 12px;">
-          <p style="font-size:14px;line-height:1.4;margin:0 0 4px;color:#111827;font-weight:700;">发生了什么</p>
+          <p style="font-size:14px;line-height:1.4;margin:0 0 4px;color:#111827;font-weight:700;">发生了什么（来源报道）</p>
           <p style="font-size:16px;line-height:1.72;margin:0;color:#1f2937;">{escape(story.summary)}</p>
         </div>
 
         <div style="margin:0 0 14px;">
-          <p style="font-size:14px;line-height:1.4;margin:0 0 4px;color:#111827;font-weight:700;">影响与观察</p>
+          <p style="font-size:14px;line-height:1.4;margin:0 0 4px;color:#111827;font-weight:700;">为什么重要（分析与观察）</p>
           <p style="font-size:16px;line-height:1.72;margin:0;color:#1f2937;">{escape(story.why_it_matters)}</p>
         </div>
 
