@@ -16,8 +16,12 @@ def main() -> None:
     args = parser.parse_args()
 
     load_dotenv()
-    if not args.dry_run and not os.getenv("OPENAI_API_KEY"):
-        raise RuntimeError("OPENAI_API_KEY is required for non-dry-run email sending.")
+    from .ai_client import get_ai_settings
+
+    settings = get_ai_settings()
+    if not args.dry_run or os.getenv("REQUIRE_AI", "").lower() == "true":
+        settings.require_key()
+    print(f"AI provider: {settings.provider}; model: {settings.model}; key configured: {bool(settings.api_key)}")
 
     from .deduplicator import filter_and_deduplicate
     from .email_renderer import render_email_html, render_subject

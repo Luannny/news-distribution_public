@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass
 
-from openai import OpenAI
-
+from .ai_client import create_ai_client, get_ai_settings
 from .ranker import RankedStory
 
 
@@ -45,12 +43,12 @@ def summarize_ranked_stories(
     if not stories:
         return BriefContent(trend_summary="过去24小时内未筛选出足够重要且可靠的新闻。", stories=[])
 
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
+    settings = get_ai_settings()
+    if not settings.api_key:
         return _heuristic_summarize(stories)
 
-    client = OpenAI(api_key=api_key, timeout=45)
-    selected_model = model or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    client = create_ai_client(settings)
+    selected_model = model or settings.model
     payload = [
         {
             "id": index,
@@ -88,11 +86,18 @@ def summarize_ranked_stories(
     data = json.loads(response.choices[0].message.content or "{}")
     story_by_id = {index: story for index, story in enumerate(stories)}
     brief_stories: list[BriefStory] = []
+    seen_ids: set[int] = set()
     for item in data.get("stories", []):
         try:
-            story = story_by_id[int(item["id"])]
+            story_id = int(item["id"])
+            story = story_by_id[story_id]
         except (KeyError, TypeError, ValueError):
             continue
+        if story_id in seen_ids:
+            continue
+        if not str(item.get("summary", "")).strip() or not str(item.get("why_it_matters", "")).strip():
+            raise ValueError("AI 返回的简报缺少事件摘要或重要性说明，请重新生成预览。")
+        seen_ids.add(story_id)
         brief_stories.append(
             BriefStory(
                 title=_reader_title(item, story),
@@ -103,6 +108,8 @@ def summarize_ranked_stories(
                 why_it_matters=str(item.get("why_it_matters", story.reason)).strip(),
             )
         )
+    if not brief_stories:
+        raise ValueError("AI 未返回有效的新闻摘要，请重新生成预览。")
     return BriefContent(
         trend_summary=str(data.get("trend_summary", "")).strip(),
         stories=brief_stories,
@@ -143,6 +150,6 @@ def _heuristic_summarize(stories: list[RankedStory]) -> BriefContent:
         for story in stories
     ]
     return BriefContent(
-        trend_summary="本地测试模式未调用 OpenAI；以下内容用于检查采集、筛选、排版和邮件流程。",
+        trend_summary="无 AI 密钥测试模式；以下内容仅用于检查采集、筛选和排版，尚未验证 AI 中文生成。",
         stories=brief_stories,
     )

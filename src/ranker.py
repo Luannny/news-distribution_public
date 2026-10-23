@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
-from openai import OpenAI
-
+from .ai_client import create_ai_client, get_ai_settings
 from .news_collector import NewsCandidate
 
 
@@ -479,12 +477,12 @@ def rank_candidates(
     if not candidates:
         return []
 
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
+    settings = get_ai_settings()
+    if not settings.api_key:
         return _heuristic_rank(candidates, max_stories)
 
-    client = OpenAI(api_key=api_key, timeout=45)
-    selected_model = model or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    client = create_ai_client(settings)
+    selected_model = model or settings.model
     prioritized_candidates = prioritize_candidates(candidates, limit=OPENAI_CANDIDATE_LIMIT)
     compact_candidates = [
         {
@@ -519,7 +517,10 @@ def rank_candidates(
     ranked: list[RankedStory] = []
     for story in stories:
         try:
-            candidate = prioritized_candidates[int(story["id"])]
+            candidate_id = int(story["id"])
+            if candidate_id < 0:
+                continue
+            candidate = prioritized_candidates[candidate_id]
             score = max(1, min(10, int(story.get("importance_score", 1))))
         except (KeyError, TypeError, ValueError, IndexError):
             continue
@@ -679,7 +680,7 @@ def _heuristic_rank(candidates: list[NewsCandidate], max_stories: int) -> list[R
                 source=candidate.source,
                 published_at=candidate.published_at.isoformat(),
                 importance_score=min(score, 8),
-                reason="本地测试模式按关键词估算重要性；正式运行请配置 OpenAI API。",
+                reason="无 AI 密钥测试模式，仅按关键词估算重要性，尚未经过 AI 筛选。",
                 summary_seed=candidate.summary,
             )
         )
