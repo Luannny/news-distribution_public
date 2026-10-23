@@ -71,11 +71,57 @@ jobs:
             python -m src.main --dry-run
           fi
 
+      - name: Show Chinese preview on the results page
+        if: env.SEND_EMAIL != 'true'
+        run: |
+          python - <<'PY'
+          import os
+          from html.parser import HTMLParser
+          from pathlib import Path
+
+          class PreviewText(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.parts = []
+                  self.in_head = False
+                  self.link = ''
+
+              def handle_starttag(self, tag, attrs):
+                  if tag == 'head':
+                      self.in_head = True
+                  if tag in ('h1', 'h2', 'h3') and not self.in_head:
+                      self.parts.append('\n' + '#' * int(tag[1]) + ' ')
+                  if tag == 'a':
+                      self.link = dict(attrs).get('href', '')
+
+              def handle_data(self, data):
+                  if not self.in_head and data.strip():
+                      self.parts.append(data.strip())
+
+              def handle_endtag(self, tag):
+                  if tag == 'head':
+                      self.in_head = False
+                  if tag == 'a' and self.link:
+                      self.parts.append('：' + self.link)
+                      self.link = ''
+                  if tag in ('p', 'h1', 'h2', 'h3', 'article'):
+                      self.parts.append('\n\n')
+
+          preview = PreviewText()
+          preview.feed(Path('daily_news_preview.html').read_text(encoding='utf-8'))
+          text = '本次只生成预览，未发送邮件。\n\n' + ''.join(preview.parts)
+          Path('daily_news_preview.md').write_text(text, encoding='utf-8')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as summary:
+              summary.write(text)
+          PY
+
       - name: Save email preview
         if: env.SEND_EMAIL != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: daily-news-preview
-          path: daily_news_preview.html
+          path: |
+            daily_news_preview.html
+            daily_news_preview.md
           if-no-files-found: error
           retention-days: 7
