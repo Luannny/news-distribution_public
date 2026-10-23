@@ -33,7 +33,10 @@ SYSTEM_PROMPT = """你为一位时间有限、但希望真正理解事件的读�
 4. 如果 evidence_level 为 headline_only，summary 只能写一句基于标题的事实，不得补充输入中没有的细节。
 5. 可以做合理推断，但必须使用“若……则……”或“后续关键看……”明确标识，并紧扣输入事实。
 6. 不得添加输入材料无法支持的数字、背景、因果关系或市场反应。
-7. 返回严格 JSON，不要输出 Markdown。"""
+7. 来源标题或片段中的观点、预测和比较判断，必须归因于该来源或发言者，不能改写为已获证实的事实。前官员的观点不能写成现任政策制定者已采取的行动。
+8. why_it_matters 是分析或后续观察，必须以“推测：若……”或“后续观察：”开头。不要使用“这表明……正在……”“这将……”引入材料未证实的断言。
+9. trend_summary 只能概括本次新闻证据；如不足以支持共同趋势，就写“本次新闻主题分散，暂不归纳共同趋势。”，不得补充背景或预测。
+10. 返回严格 JSON，不要输出 Markdown。"""
 
 
 def summarize_ranked_stories(
@@ -76,7 +79,7 @@ def summarize_ranked_stories(
                     "每条 story 必须包含 id、chinese_title、summary、why_it_matters。\n"
                     "chinese_title：自然的中文新闻标题，保留关键主体和数字，不使用耸动措辞。\n"
                     "summary：有有效 evidence 时写1-2句；headline_only 时严格只写1句。第一句直接写谁做了什么以及关键结果。\n"
-                    "why_it_matters：严格1句，指出直接受影响对象、影响路径，或一个具体后续观察点。\n"
+                    "why_it_matters：严格1句，以‘推测：若……则……’说明可能影响，或以‘后续观察：’提出具体待验证的问题；不要断言未获证实的行为或因果关系。\n"
                     "删除任何不提供新信息的句子。不要为了满足长度而扩写。\n\n"
                     f"{json.dumps(payload, ensure_ascii=False)}"
                 ),
