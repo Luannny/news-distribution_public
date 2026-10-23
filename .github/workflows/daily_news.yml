@@ -29,8 +29,10 @@ jobs:
     timeout-minutes: 15
     env:
       SEND_EMAIL: ${{ github.event_name == 'schedule' || inputs.send_email }}
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      OPENAI_MODEL: ${{ secrets.OPENAI_MODEL || 'gpt-4o-mini' }}
+      AI_PROVIDER: gemini
+      REQUIRE_AI: 'true'
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_MODEL: ${{ secrets.GEMINI_MODEL || 'gemini-3.5-flash-lite' }}
       EMAIL_HOST: smtp.gmail.com
       EMAIL_PORT: '587'
       EMAIL_USER: ${{ secrets.EMAIL_USER }}
@@ -49,12 +51,13 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Check sending configuration
-        if: env.SEND_EMAIL == 'true'
+      - name: Check Gemini and email configuration
         run: |
           python - <<'PY'
           import os
-          required = ['OPENAI_API_KEY', 'EMAIL_USER', 'EMAIL_PASSWORD', 'EMAIL_TO']
+          required = ['GEMINI_API_KEY']
+          if os.getenv('SEND_EMAIL') == 'true':
+              required += ['EMAIL_USER', 'EMAIL_PASSWORD', 'EMAIL_TO']
           missing = [name for name in required if not os.getenv(name, '').strip()]
           if missing:
               raise SystemExit('请先在 Settings → Secrets and variables → Actions 中填写：' + ', '.join(missing))
