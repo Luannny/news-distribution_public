@@ -54,8 +54,8 @@ class AIProviderTests(unittest.TestCase):
         calls = []
         candidate = NewsCandidate(
             title="Nvidia announces new chip production",
-            source="Reuters",
-            url="https://example.com/original-story",
+            source="The Guardian",
+            url="https://www.theguardian.com/technology/2026/oct/27/original-story",
             published_at=datetime.now(timezone.utc),
             summary="Nvidia said production of its new chip has started.",
         )
@@ -71,7 +71,7 @@ class AIProviderTests(unittest.TestCase):
             else:
                 content = {"trend_summary": "芯片供给出现新进展。", "stories": [{
                     "id": 0, "chinese_title": "英伟达宣布新芯片开始量产", "summary": "英伟达表示新芯片已开始量产。",
-                    "why_it_matters": "后续关键看实际交付能否满足客户需求。", "url": "https://example.com/invented-link",
+                    "why_it_matters": "后续观察：实际交付能否满足客户需求。", "url": "https://example.com/invented-link",
                 }]}
             return httpx.Response(200, json={"id": "test", "choices": [{"index": 0, "message": {"role": "assistant", "content": json.dumps(content, ensure_ascii=False)}, "finish_reason": "stop"}]})
 
@@ -80,7 +80,7 @@ class AIProviderTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as folder:
             preview = Path(folder) / "preview.html"
-            with patch("sys.argv", ["news", "--dry-run", "--preview-path", str(preview)]), patch("src.main.load_dotenv"), patch("src.ai_client.OpenAI", side_effect=make_client), patch("src.news_collector.collect_news", return_value=[candidate]), patch("src.vix.get_vix_snapshot", return_value=VixSnapshot(None, "测试不提供行情")), patch("src.email_sender.send_email") as send:
+            with patch("sys.argv", ["news", "--dry-run", "--preview-path", str(preview)]), patch("src.main.load_dotenv"), patch("src.ai_client.OpenAI", side_effect=make_client), patch("src.news_collector.collect_news", return_value=[candidate]), patch("src.article_access.verify_readable_candidates", return_value=[candidate]), patch("src.vix.get_vix_snapshot", return_value=VixSnapshot(None, "测试不提供行情")), patch("src.email_sender.send_email") as send:
                 main()
                 send.assert_not_called()
             html = preview.read_text(encoding="utf-8")
