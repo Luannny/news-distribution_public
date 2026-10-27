@@ -15,6 +15,7 @@ class BriefStory:
     importance_score: int
     summary: str
     why_it_matters: str
+    category: str = "科技"
 
 
 @dataclass(frozen=True)
@@ -23,8 +24,9 @@ class BriefContent:
     stories: list[BriefStory]
 
 
-SYSTEM_PROMPT = """你为一位时间有限、但希望真正理解事件的读者撰写高信息密度中文新闻简报。
+SYSTEM_PROMPT = """你为一位希望全面了解世界的读者撰写政治、经济、体育、科技、时尚综合中文新闻简报。
 所有面向读者的字段必须使用自然、准确的简体中文。
+五个领域同等重要。已选新闻必须全部保留，保持输入顺序，不要把体育、时尚或政治转成财经解读。
 
 写作规则：
 1. 先说具体事实，再做影响判断。保留输入中的公司、人名、数字、时间和政策动作。
@@ -55,6 +57,7 @@ def summarize_ranked_stories(
     payload = [
         {
             "id": index,
+            "category": story.category,
             "title": story.title,
             "source": story.source,
             "url": story.url,
@@ -75,7 +78,7 @@ def summarize_ranked_stories(
                 "role": "user",
                 "content": (
                     "根据以下已筛选新闻生成中文简报。返回包含 trend_summary 和 stories 的 JSON。\n"
-                    "trend_summary：2-3句，不逐条复述；只提炼最多3个共同趋势，并说明对市场或产业的具体含义。\n"
+                    "trend_summary：2-3句今日导读，概括不同领域的重点，不强行归纳共同趋势，不默认围绕资本市场。\n"
                     "每条 story 必须包含 id、chinese_title、summary、why_it_matters。\n"
                     "chinese_title：自然的中文新闻标题，保留关键主体和数字，不使用耸动措辞。\n"
                     "summary：有有效 evidence 时写1-2句；headline_only 时严格只写1句。第一句直接写谁做了什么以及关键结果。\n"
@@ -109,10 +112,12 @@ def summarize_ranked_stories(
                 importance_score=story.importance_score,
                 summary=str(item.get("summary", "")).strip(),
                 why_it_matters=str(item.get("why_it_matters", story.reason)).strip(),
+                category=story.category,
             )
         )
-    if not brief_stories:
-        raise ValueError("AI 未返回有效的新闻摘要，请重新生成预览。")
+    if len(brief_stories) != len(stories):
+        raise ValueError("AI 遗漏已选领域或新闻，请重新生成预览。")
+    brief_stories.sort(key=lambda item: next(i for i, original in enumerate(stories) if original.url == item.url))
     return BriefContent(
         trend_summary=str(data.get("trend_summary", "")).strip(),
         stories=brief_stories,
@@ -149,6 +154,7 @@ def _heuristic_summarize(stories: list[RankedStory]) -> BriefContent:
             importance_score=story.importance_score,
             summary=f"这条新闻来自 {story.source}。标题显示：{story.title}",
             why_it_matters=story.reason,
+            category=story.category,
         )
         for story in stories
     ]

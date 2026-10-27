@@ -1,16 +1,18 @@
 from __future__ import annotations
 
-import re
-from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from html import unescape
 from html.parser import HTMLParser
-from typing import Iterable
-from urllib.parse import quote_plus
+import re
+from urllib.parse import urljoin, urlparse
 
 import feedparser
 import requests
+
+from .news_policy import CATEGORIES, RSS_FEEDS
 
 
 @dataclass(frozen=True)
@@ -20,185 +22,135 @@ class NewsCandidate:
     source: str
     published_at: datetime
     summary: str = ""
-
-
-GOOGLE_NEWS_QUERIES = [
-    "AI OR artificial intelligence when:1d",
-    "technology OR semiconductor OR chips when:1d",
-    "China US relations OR China United States when:1d",
-    "Chinese companies OR Alibaba OR Tencent OR BYD OR Huawei when:1d",
-    "stocks OR earnings OR markets OR IPO OR acquisition when:1d",
-    "major companies OR big tech OR revenue OR profit OR guidance when:1d",
-    "macroeconomy OR inflation OR Federal Reserve OR China economy when:1d",
-]
-
-GDELT_QUERIES = [
-    "artificial intelligence",
-    "China United States",
-    "semiconductor",
-    "macroeconomy",
-    "geopolitics",
-]
-
-FED_MONETARY_RSS_URL = "https://www.federalreserve.gov/feeds/press_monetary.xml"
-BLS_MAJOR_RELEASE_FEEDS = {
-    "Employment Situation": "https://www.bls.gov/feed/empsit.rss",
-    "Consumer Price Index": "https://www.bls.gov/feed/cpi.rss",
-    "Producer Price Index": "https://www.bls.gov/feed/ppi.rss",
-}
-RSS_REQUEST_HEADERS = {
-    "User-Agent": "daily-news-brief/1.0 (public RSS collector)",
-}
+    category: str = "科技"
+    access_checked_at: str = ""
 
 
 class _HTMLTextExtractor(HTMLParser):
-    def __init__(self) -> None:
+    def __init__(self):
         super().__init__()
-        self.parts: list[str] = []
+        self.parts = []
 
-    def handle_data(self, data: str) -> None:
+    def handle_data(self, data):
         self.parts.append(data)
 
 
-def collect_news(hours: int = 24, limit_per_source: int = 50) -> list[NewsCandidate]:
-    since = datetime.now(timezone.utc) - timedelta(hours=hours)
-    candidates: list[NewsCandidate] = []
-    candidates.extend(_collect_google_news(since, limit_per_source))
-    candidates.extend(_collect_gdelt(since, limit_per_source))
-    candidates.extend(_collect_fed_monetary_news(since, limit_per_source))
-    candidates.extend(_collect_bls_major_releases(since, limit_per_source))
-    return [item for item in candidates if item.published_at >= since]
+def classify_category(url: str, title: str, fallback: str = "政治") -> str:
+    path = urlparse(url).path.lower()
+    if any(part in path for part in ("/sport", "/football", "/basketball", "/tennis")):
+        return "体育"
+    if any(part in path for part in ("/fashion", "/style")):
+        return "时尚"
+    if any(part in path for part in ("/technology", "/science", "/tech/")):
+        return "科技"
+    if any(part in path for part in ("/business", "/economy", "/economics")):
+        return "经济"
+    if fallback != "政治":
+        return fallback
+    text = title.lower()
+    if re.search(r'\b(world cup|championship|olympic|grand slam|nba|fifa|world series|football|basketball|tennis|marathon)\b', text):
+        return "体育"
+    if re.search(r'\b(inflation|interest rate|gdp|economy|trade deal|earnings|tariffs|unemployment|stock market)\b', text):
+        return "经济"
+    if re.search(r'\b(artificial intelligence|semiconductor|cyberattack|ai model|robotics|quantum|technology)\b', text):
+        return "科技"
+    return fallback
 
 
-def _collect_google_news(since: datetime, limit_per_query: int) -> list[NewsCandidate]:
-    items: list[NewsCandidate] = []
-    for query in GOOGLE_NEWS_QUERIES:
-        encoded = quote_plus(query)
-        url = (
-            "https://news.google.com/rss/search?"
-            f"q={encoded}&hl=en-US&gl=US&ceid=US:en"
-        )
-        feed = feedparser.parse(url)
-        for entry in feed.entries[:limit_per_query]:
-            published_at = _parse_feed_datetime(
-                getattr(entry, "published", None) or getattr(entry, "updated", None)
-            )
-            if not published_at or published_at < since:
-                continue
-            title, source = _split_google_title(_clean_text(getattr(entry, "title", "")))
-            items.append(
-                NewsCandidate(
-                    title=title,
-                    url=getattr(entry, "link", ""),
-                    source=source,
-                    published_at=published_at,
-                    summary=_clean_text(getattr(entry, "summary", "")),
-                )
-            )
-    return items
-
-
-def _collect_gdelt(since: datetime, limit_per_query: int) -> list[NewsCandidate]:
-    items: list[NewsCandidate] = []
-    start = since.strftime("%Y%m%d%H%M%S")
-    end = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-    for query in GDELT_QUERIES:
-        params = {
-            "query": query,
-            "mode": "ArtList",
-            "format": "json",
-            "maxrecords": str(limit_per_query),
-            "sort": "HybridRel",
-            "startdatetime": start,
-            "enddatetime": end,
-        }
-        try:
-            response = requests.get(
-                "https://api.gdeltproject.org/api/v2/doc/doc",
-                params=params,
-                timeout=20,
-            )
-            response.raise_for_status()
-        except requests.RequestException:
-            continue
-
-        for article in response.json().get("articles", []):
-            published_at = _parse_gdelt_datetime(article.get("seendate"))
-            if not published_at or published_at < since:
-                continue
-            items.append(
-                NewsCandidate(
-                    title=_clean_text(article.get("title", "")),
-                    url=article.get("url", ""),
-                    source=article.get("domain") or "GDELT",
-                    published_at=published_at,
-                    summary="",
-                )
-            )
-    return items
-
-
-def _collect_fed_monetary_news(
-    since: datetime,
-    limit: int,
-) -> list[NewsCandidate]:
-    entries = _fetch_rss_entries(FED_MONETARY_RSS_URL)
-    items: list[NewsCandidate] = []
-    for entry in entries[:limit]:
-        title = _clean_text(getattr(entry, "title", ""))
-        if not _is_major_fed_release(title):
-            continue
-        candidate = _rss_entry_to_candidate(entry, "Federal Reserve")
-        if candidate and candidate.published_at >= since:
-            items.append(candidate)
-    return items
-
-
-def _collect_bls_major_releases(
-    since: datetime,
-    limit_per_feed: int,
-) -> list[NewsCandidate]:
-    items: list[NewsCandidate] = []
-    for release_name, url in BLS_MAJOR_RELEASE_FEEDS.items():
-        entries = _fetch_rss_entries(url)
-        for entry in entries[:limit_per_feed]:
-            title = _clean_text(getattr(entry, "title", ""))
-            if not _is_major_bls_release(release_name, title):
-                continue
-            candidate = _rss_entry_to_candidate(entry, "U.S. Bureau of Labor Statistics")
-            if candidate and candidate.published_at >= since:
-                items.append(candidate)
-    return items
+def collect_news(hours: int = 24, limit_per_source: int = 40) -> list[NewsCandidate]:
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(hours=hours)
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        batches = list(executor.map(lambda feed: _collect_feed(feed, since, now, limit_per_source), RSS_FEEDS))
+    candidates = [item for batch in batches for item in batch]
+    candidates.extend(_collect_fashionunited(since, now))
+    result = [item for item in candidates if since <= item.published_at <= now]
+    print("Fresh feed candidates:", {c: sum(x.category == c for x in result) for c in CATEGORIES})
+    return result
 
 
 def _fetch_rss_entries(url: str) -> list:
     try:
-        response = requests.get(
-            url,
-            headers=RSS_REQUEST_HEADERS,
-            timeout=20,
-        )
+        response = requests.get(url, headers={"User-Agent": "DailyNewsBrief/2.0 (personal RSS reader)"}, timeout=15)
         response.raise_for_status()
-    except requests.RequestException:
+        return list(feedparser.parse(response.content).entries)
+    except (requests.RequestException, ValueError):
         return []
-    return list(feedparser.parse(response.content).entries)
 
 
-def _rss_entry_to_candidate(entry, source: str) -> NewsCandidate | None:
-    published_at = _parse_feed_datetime(
-        getattr(entry, "published", None) or getattr(entry, "updated", None)
-    )
-    title = _clean_text(getattr(entry, "title", ""))
-    url = getattr(entry, "link", "")
-    if not published_at or not title or not url:
-        return None
-    return NewsCandidate(
-        title=title,
-        url=url,
-        source=source,
-        published_at=published_at,
-        summary=_clean_text(getattr(entry, "summary", "")),
-    )
+def _collect_feed(feed, since, now, limit):
+    category, source, url = feed
+    items = []
+    # Feeds can be in editorial rather than date order; inspect before truncating.
+    for entry in _fetch_rss_entries(url):
+        published = _parse_feed_datetime(entry.get("published") or entry.get("updated") or entry.get("dc_date"))
+        if not published or not since <= published <= now:
+            continue
+        title = _clean_text(entry.get("title", ""))
+        link = entry.get("link", "")
+        items.append(NewsCandidate(
+            title=title, url=link, source=source, published_at=published,
+            summary=_clean_text(entry.get("summary", "")),
+            category=classify_category(link, title, category or "政治"),
+        ))
+    return sorted(items, key=lambda x: x.published_at, reverse=True)[:limit]
+
+
+class _FashionLinks(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.links = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "a":
+            href = dict(attrs).get("href", "")
+            url = urljoin("https://fashionunited.com", href)
+            if re.match(r'https://fashionunited.com/news/(fashion|people)/[^/]+/\d+', url):
+                self.links.append(url)
+
+
+def _collect_fashionunited(since, now):
+    # The publisher exposes dated article links in its public section pages.
+    links = []
+    for section in ("fashion", "people"):
+        try:
+            response = requests.get(f"https://fashionunited.com/news/{section}", timeout=12)
+            response.raise_for_status()
+            page = _FashionLinks()
+            page.feed(response.text)
+            links.extend(page.links)
+        except requests.RequestException:
+            continue
+    links = list(dict.fromkeys(links))[:24]
+
+    def collect(url):
+        from .article_access import HEADERS, inspect_public_article, json_objects
+        try:
+            response = requests.get(url, headers=HEADERS, timeout=12, allow_redirects=False)
+            if response.status_code != 200:
+                return None
+            readable, page = inspect_public_article(response.text)
+            if not readable:
+                return None
+            articles = [obj for obj in json_objects(page.jsonld) if any(
+                kind in str(obj.get("@type", "")) for kind in ("NewsArticle", "Article")
+            ) and obj.get("datePublished")]
+            if not articles:
+                return None
+            article = articles[0]
+            published = _parse_feed_datetime(article["datePublished"])
+            if not published or not since <= published <= now:
+                return None
+            return NewsCandidate(
+                title=str(article.get("headline") or page.metadata.get("og:title", "")),
+                url=url, source="FashionUnited", published_at=published,
+                summary=str(article.get("description") or page.metadata.get("og:description", "")),
+                category="时尚", access_checked_at=datetime.now(timezone.utc).isoformat(),
+            )
+        except (requests.RequestException, ValueError, TypeError):
+            return None
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        return [item for item in executor.map(collect, links) if item is not None]
 
 
 def _is_major_fed_release(title: str) -> bool:
@@ -297,14 +249,5 @@ def _split_google_title(title: str) -> tuple[str, str]:
     return story_title.strip() or title, source.strip() or "Google News"
 
 
-def candidates_to_dicts(candidates: Iterable[NewsCandidate]) -> list[dict[str, str]]:
-    return [
-        {
-            "title": item.title,
-            "url": item.url,
-            "source": item.source,
-            "published_at": item.published_at.isoformat(),
-            "summary": item.summary,
-        }
-        for item in candidates
-    ]
+def candidates_to_dicts(candidates):
+    return [{**asdict(item), "published_at": item.published_at.isoformat()} for item in candidates]

@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 
 from .summarizer import BriefContent
 from .vix import VixSnapshot
+from .news_policy import CATEGORIES
 
 
 def render_email_html(brief_date: date, vix: VixSnapshot, content: BriefContent) -> str:
@@ -14,9 +15,17 @@ def render_email_html(brief_date: date, vix: VixSnapshot, content: BriefContent)
         f'<p style="font-size:13px;line-height:1.6;margin:8px 0 0;color:#6b7280;">数据日期：{escape(vix.as_of)} · 来源：{escape(vix.source)}</p>'
         if vix.as_of else ""
     )
-    stories_html = "\n".join(
-        _render_story(index, story) for index, story in enumerate(content.stories, start=1)
-    )
+    sections = []
+    count = 0
+    for category in CATEGORIES:
+        stories = [story for story in content.stories if story.category == category]
+        sections.append(f'<h3 style="font-size:22px;margin:26px 0 14px;color:#1d4ed8;">{category}</h3>')
+        if not stories:
+            sections.append('<p style="color:#6b7280;">过去24小时暂无通过重要性及免费原文检查的合适新闻。</p>')
+        for story in stories:
+            count += 1
+            sections.append(_render_story(count, story))
+    stories_html = "\n".join(sections)
     if not stories_html:
         stories_html = """
     <p style="font-size:16px;line-height:1.7;margin:0;color:#374151;">今日没有达到重要性门槛的新闻。</p>"""
@@ -32,18 +41,11 @@ def render_email_html(brief_date: date, vix: VixSnapshot, content: BriefContent)
   <main style="max-width:720px;margin:0 auto;padding:18px;background:#ffffff;">
     <header style="padding:8px 0 18px;border-bottom:3px solid #111827;">
       <h1 style="font-size:30px;line-height:1.18;margin:0 0 8px;font-weight:800;letter-spacing:0;">每日重要新闻简报</h1>
-      <p style="font-size:15px;margin:0;color:#4b5563;">日期：{brief_date.isoformat()}</p>
+      <p style="font-size:15px;margin:0;color:#4b5563;">日期：{brief_date.isoformat()} · 政治 / 经济 / 体育 / 科技 / 时尚</p>
     </header>
 
     <section style="padding:22px 0 18px;border-bottom:1px solid #d1d5db;">
-      <h2 style="font-size:21px;line-height:1.3;margin:0 0 12px;font-weight:750;">市场温度</h2>
-      <p style="font-size:20px;line-height:1.35;margin:0 0 8px;"><strong>VIX:</strong> {vix_value}</p>
-      <p style="font-size:16px;line-height:1.7;margin:0;color:#374151;">{escape(vix.interpretation)}</p>
-      {vix_data_note}
-    </section>
-
-    <section style="padding:22px 0 18px;border-bottom:1px solid #d1d5db;">
-      <h2 style="font-size:21px;line-height:1.3;margin:0 0 12px;font-weight:750;">今日摘要</h2>
+      <h2 style="font-size:21px;line-height:1.3;margin:0 0 12px;font-weight:750;">今日导读</h2>
       <p style="font-size:16px;line-height:1.75;margin:0;color:#1f2937;">{escape(content.trend_summary)}</p>
     </section>
 
@@ -52,8 +54,15 @@ def render_email_html(brief_date: date, vix: VixSnapshot, content: BriefContent)
     {stories_html}
     </section>
 
+    <section style="padding:22px 0 18px;border-top:1px solid #d1d5db;">
+      <h2 style="font-size:21px;line-height:1.3;margin:0 0 12px;font-weight:750;">市场补充：VIX</h2>
+      <p style="font-size:20px;line-height:1.35;margin:0 0 8px;"><strong>VIX:</strong> {vix_value}</p>
+      <p style="font-size:16px;line-height:1.7;margin:0;color:#374151;">{escape(vix.interpretation)}</p>
+      {vix_data_note}
+    </section>
+
     <footer style="border-top:1px solid #d1d5db;margin:26px 0 0;padding:16px 0 4px;">
-      <p style="font-size:13px;line-height:1.6;color:#6b7280;margin:0;">本简报由 AI 自动生成，仅包含过去24小时内的重要新闻。</p>
+      <p style="font-size:13px;line-height:1.6;color:#6b7280;margin:0;">本简报由 AI 自动生成，覆盖过去24小时。原文链接在生成时以未登录方式检查；网站的地区和访问规则之后仍可能变化。</p>
     </footer>
   </main>
 </body>
@@ -69,7 +78,7 @@ def _render_story(index: int, story) -> str:
     link_label = escape(_source_label(story.url))
     return f"""
       <article style="margin:0 0 18px;padding:18px 16px;border:1px solid #d1d5db;border-left:5px solid #2563eb;background:#fbfcfe;border-radius:6px;">
-        <p style="font-size:13px;line-height:1.4;margin:0 0 8px;color:#6b7280;font-weight:700;text-transform:uppercase;">新闻 {index} / 重要性 {story.importance_score}/10</p>
+        <p style="font-size:13px;line-height:1.4;margin:0 0 8px;color:#6b7280;font-weight:700;">{escape(story.category)} · 新闻 {index} / 重要性 {story.importance_score}/10</p>
         <h3 style="font-size:20px;line-height:1.35;margin:0 0 10px;font-weight:780;color:#111827;">{index}. {escape(story.title)}</h3>
         <p style="font-size:14px;line-height:1.5;margin:0 0 14px;color:#6b7280;">来源：{source_label}</p>
 

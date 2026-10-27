@@ -1,80 +1,12 @@
 from __future__ import annotations
 
 import re
+from urllib.parse import urlparse
 from difflib import SequenceMatcher
 
 from .news_collector import NewsCandidate
-
-
-NOISE_KEYWORDS = {
-    "celebrity",
-    "movie",
-    "music",
-    "sports",
-    "football",
-    "basketball",
-    "gaming patch",
-    "changelog",
-    "release notes",
-    "minor update",
-}
-
-SIGNAL_KEYWORDS = {
-    "ai",
-    "ai pc",
-    "ai agent",
-    "artificial intelligence",
-    "openai",
-    "anthropic",
-    "deepmind",
-    "earnings",
-    "consumer price index",
-    "cpi",
-    "employment situation",
-    "fomc",
-    "google",
-    "guidance",
-    "ipo",
-    "markets",
-    "microsoft",
-    "nvidia",
-    "profit",
-    "producer price index",
-    "ppi",
-    "payroll employment",
-    "revenue",
-    "rtx spark",
-    "stocks",
-    "semiconductor",
-    "chip",
-    "gpu",
-    "tsmc",
-    "asml",
-    "china",
-    "u.s.",
-    "us-china",
-    "china-us",
-    "united states",
-    "tariff",
-    "sanction",
-    "export control",
-    "entity list",
-    "fed",
-    "federal reserve",
-    "inflation",
-    "unemployment rate",
-    "rates",
-    "interest rate",
-    "rate cut",
-    "rate hike",
-    "gdp",
-    "yuan",
-    "treasury",
-    "huawei",
-    "alibaba",
-    "tencent",
-    "byd",
-}
+from .article_access import allowed_source
+from .news_policy import CATEGORIES
 
 
 def filter_and_deduplicate(candidates: list[NewsCandidate]) -> list[NewsCandidate]:
@@ -99,12 +31,13 @@ def filter_and_deduplicate(candidates: list[NewsCandidate]) -> list[NewsCandidat
 
 def _passes_basic_filter(item: NewsCandidate) -> bool:
     text = f"{item.title} {item.summary}".lower()
-    if not item.title or not item.url:
+    if not item.title or not item.url or item.category not in CATEGORIES or not allowed_source(item.url, item.source):
         return False
-    has_signal = any(_contains_term(text, keyword) for keyword in SIGNAL_KEYWORDS)
-    if any(_contains_term(text, keyword) for keyword in NOISE_KEYWORDS):
-        return has_signal
-    return has_signal
+    if "/live/" in urlparse(item.url).path:
+        return False
+    # Sports and fashion are first-class sections. Do not require finance/AI keywords.
+    noise = ("gaming patch", "changelog", "release notes", "minor update", "shop now", "best deals", "stocks to buy", "seeking full-time", "seeking part-time", "internship", "sponsored content", "find fashion jobs", "job vacancies", "apply now")
+    return not any(_contains_term(text, keyword) for keyword in noise)
 
 
 def _normalize_title(title: str) -> str:

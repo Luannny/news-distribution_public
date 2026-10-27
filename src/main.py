@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import argparse
 import os
+import json
+from dataclasses import asdict
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
@@ -30,19 +33,32 @@ def main() -> None:
     from .ranker import rank_candidates
     from .summarizer import summarize_ranked_stories
     from .vix import get_vix_snapshot
+    from .article_access import verify_readable_candidates
+    from .news_policy import CATEGORIES
 
     today = datetime.now().date()
     candidates = collect_news(hours=args.hours)
     filtered = filter_and_deduplicate(candidates)
-    ranked = rank_candidates(filtered, max_stories=10)
+    readable = verify_readable_candidates(filtered)
+    if not readable:
+        raise RuntimeError("本次没有通过时效和免费原文检查的新闻，停止生成以避免推送无效链接。")
+    ranked = rank_candidates(readable, max_stories=10)
     brief = summarize_ranked_stories(ranked)
     vix = get_vix_snapshot()
     subject = render_subject(today)
     html = render_email_html(today, vix, brief)
+    counts = Counter(story.category for story in brief.stories)
+    print("Selected sections:", {category: counts[category] for category in CATEGORIES})
 
     if args.dry_run:
         preview_path = Path(args.preview_path)
         preview_path.write_text(html, encoding="utf-8")
+        preview_path.with_suffix(".json").write_text(json.dumps({
+            "date": today.isoformat(), "vix": asdict(vix), "brief": asdict(brief),
+            "coverage": {category: counts[category] for category in CATEGORIES},
+            "selected_sources": [{"url": story.url, "source": story.source, "category": story.category,
+                                  "published_at": story.published_at, "access_checked_at": story.access_checked_at} for story in ranked],
+        }, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"Dry run complete: {preview_path.resolve()}")
         print(f"Subject: {subject}")
         print(f"Candidates collected: {len(candidates)}")
