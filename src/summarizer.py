@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from .ai_client import create_ai_client, get_ai_settings
+from .ai_client import create_ai_client, get_ai_settings, request_json
 from .ranker import RankedStory
 
 
@@ -68,10 +68,18 @@ def summarize_ranked_stories(
         }
         for index, story in enumerate(stories)
     ]
-    response = client.chat.completions.create(
+    schema = {"type": "object", "properties": {
+        "trend_summary": {"type": "string"},
+        "stories": {"type": "array", "minItems": len(stories), "maxItems": len(stories), "items": {
+            "type": "object", "properties": {"id": {"type": "integer"}, "chinese_title": {"type": "string"},
+                "summary": {"type": "string"}, "why_it_matters": {"type": "string"}},
+            "required": ["id", "chinese_title", "summary", "why_it_matters"], "additionalProperties": False,
+        }},
+    }, "required": ["trend_summary", "stories"], "additionalProperties": False}
+    data = request_json(client,
         model=selected_model,
         temperature=0.2,
-        response_format={"type": "json_object"},
+        schema=schema, name="chinese_brief",
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {
@@ -89,7 +97,6 @@ def summarize_ranked_stories(
             },
         ],
     )
-    data = json.loads(response.choices[0].message.content or "{}")
     story_by_id = {index: story for index, story in enumerate(stories)}
     brief_stories: list[BriefStory] = []
     seen_ids: set[int] = set()
