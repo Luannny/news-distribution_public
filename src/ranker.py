@@ -6,7 +6,7 @@ from collections import Counter
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
-from .ai_client import create_ai_client, get_ai_settings
+from .ai_client import create_ai_client, get_ai_settings, request_json
 from .news_collector import NewsCandidate
 from .news_policy import CATEGORIES, TARGET_PER_CATEGORY, MAX_PER_CATEGORY, MAX_STORIES, MIN_IMPORTANCE, AI_CANDIDATE_LIMIT
 
@@ -93,13 +93,16 @@ def rank_candidates(candidates, max_stories=MAX_STORIES, model=None):
         "snippet": item.summary[:600],
     } for i, item in enumerate(prioritized)]
     client = create_ai_client(settings)
-    response = client.chat.completions.create(
+    schema = {"type": "object", "properties": {"stories": {"type": "array", "maxItems": 20, "items": {
+        "type": "object", "properties": {"id": {"type": "integer"}, "importance_score": {"type": "integer"}, "reason": {"type": "string"}},
+        "required": ["id", "importance_score", "reason"], "additionalProperties": False,
+    }}}, "required": ["stories"], "additionalProperties": False}
+    payload = request_json(client,
         model=model or settings.model, temperature=0.1,
-        response_format={"type": "json_object"},
+        schema=schema, name="ranked_news",
         messages=[{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content":
             "请在五个领域各挑选最多4条，目标合计10条左右，不要让经济/科技挤占其他领域。弱新闻可不选。返回stories JSON。\n" + json.dumps(compact, ensure_ascii=False)}],
     )
-    payload = json.loads(response.choices[0].message.content or "{}")
     ranked = []
     seen = set()
     for item in payload.get("stories", []):
