@@ -4,12 +4,13 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+from types import SimpleNamespace
 
 import httpx
 from openai import OpenAI
 
-from src.ai_client import create_ai_client, get_ai_settings
+from src.ai_client import create_ai_client, get_ai_settings, request_json
 from src.news_collector import NewsCandidate
 from src.vix import VixSnapshot
 
@@ -65,13 +66,15 @@ class AIProviderTests(unittest.TestCase):
             self.assertEqual(request.headers["authorization"], "Bearer test-google")
             body = json.loads(request.content)
             self.assertEqual(body["model"], "gemini-3.5-flash-lite")
+            self.assertEqual(body["response_format"]["type"], "json_schema")
+            self.assertNotIn("url", body["response_format"]["json_schema"]["schema"]["properties"]["stories"]["items"]["properties"])
             calls.append(body)
             if len(calls) == 1:
                 content = {"stories": [{"id": 0, "importance_score": 9, "reason": "芯片量产进展"}]}
             else:
                 content = {"trend_summary": "芯片供给出现新进展。", "stories": [{
                     "id": 0, "chinese_title": "英伟达宣布新芯片开始量产", "summary": "英伟达表示新芯片已开始量产。",
-                    "why_it_matters": "后续观察：实际交付能否满足客户需求。", "url": "https://example.com/invented-link",
+                    "why_it_matters": "后续观察：实际交付能否满足客户需求。",
                 }]}
             return httpx.Response(200, json={"id": "test", "choices": [{"index": 0, "message": {"role": "assistant", "content": json.dumps(content, ensure_ascii=False)}, "finish_reason": "stop"}]})
 
@@ -88,6 +91,31 @@ class AIProviderTests(unittest.TestCase):
             self.assertIn(candidate.url, html)
             self.assertNotIn("invented-link", html)
             self.assertEqual(len(calls), 2)
+
+
+class StructuredOutputTests(unittest.TestCase):
+    schema = {"type": "object", "properties": {"stories": {"type": "array", "items": {
+        "type": "object", "properties": {"id": {"type": "integer"}}, "required": ["id"],
+        "additionalProperties": False,
+    }}}, "required": ["stories"], "additionalProperties": False}
+
+    def response(self, text):
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=text))])
+
+    def test_malformed_json_is_regenerated_once_without_silent_repair(self):
+        client = Mock()
+        client.chat.completions.create.side_effect = [self.response('{"stories": [{id: 0}]}'), self.response('{"stories": [{"id": 0}]}')]
+        data = request_json(client, model="gemini-3.5-flash-lite", messages=[], schema=self.schema, name="test")
+        self.assertEqual(data, {"stories": [{"id": 0}]})
+        self.assertEqual(client.chat.completions.create.call_count, 2)
+        self.assertEqual(client.chat.completions.create.call_args.kwargs["temperature"], 0)
+
+    def test_repeated_invalid_fields_fail_instead_of_producing_partial_news(self):
+        client = Mock()
+        client.chat.completions.create.return_value = self.response('{"stories": [{"id": "wrong"}]}')
+        with self.assertRaises(RuntimeError):
+            request_json(client, model="gemini-3.5-flash-lite", messages=[], schema=self.schema, name="test")
+        self.assertEqual(client.chat.completions.create.call_count, 2)
 
 
 if __name__ == "__main__":
