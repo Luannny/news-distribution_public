@@ -1,48 +1,9 @@
-# Daily News Brief Project
+# Daily Chinese General News Brief
 
-This project is a high-signal news briefing system.
+User preference updated 2026-10-27: cover politics, economy, sports, technology and fashion equally. Target about ten stories (normally two per section), with at most three in any section and ten in total. Prefer fewer verified, useful stories over filler. Do not revert to a finance/AI-only brief or exclude sports.
 
-The goal is not to maximize news coverage.
+Use news published in the previous 24 hours, reliable original sources and direct, freely readable links. Exclude Bloomberg, other configured paywall publishers, articles explicitly requiring payment/login, unavailable pages and opaque Google News links. Check access without login; never bypass a paywall. If a section has no qualifying articles, explain the gap rather than inventing or adding stale stories.
 
-The goal is to identify and summarize only the most important developments from the previous 24 hours.
+Score importance within each field using novelty, concrete impact, evidence and reader value. Avoid clickbait, ads, shopping/affiliate lists, job posts, unverified rumors, repetitive stock recaps and duplicates. Distinguish source-reported facts from labelled analysis/observation. Preserve VIX with its date, source and interpretation.
 
-## Selection Philosophy
-
-Prefer omission over inclusion.
-
-A briefing with 5 important stories is better than a briefing with 10 average stories.
-
-Never add filler content.
-
-## News Priorities
-
-Prioritize:
-
-* AI and technology
-* AI-related industries
-* Major China-US developments
-* Major Chinese company events
-* Major macroeconomic events
-
-## Exclusions
-
-Generally exclude:
-
-* minor feature updates
-* technical changelogs
-* routine company announcements
-* entertainment news
-* sports news
-* celebrity news
-
-Unless the event is exceptionally important.
-
-## Output Goals
-
-Maximum 10 stories per day.
-
-All summaries should be written in Chinese.
-
-The entire briefing should be readable in under 5 minutes.
-
-Every briefing should include the VIX index and a brief interpretation.
+Keep Gemini, Gmail delivery and the 08:00 Asia/Shanghai cloud schedule. Manual validation must use dry-run and never send mail. Never read or publish secrets.
