@@ -1,13 +1,13 @@
-# Daily Chinese News Brief
+# Daily Chinese General News Brief
 
-See [中文配置说明](README.zh-CN.md) for the Gemini + Gmail setup.
+[Chinese setup guide](README.zh-CN.md)
 
-Collects news from the previous 24 hours, uses Gemini to select at most 10 high-signal stories and write a Chinese briefing, includes VIX with its data date and source, and sends via Gmail SMTP.
+Politics, economy, sports, technology and fashion receive equal coverage. Target about ten stories from the last 24 hours, normally two per section, never more than three in one section or ten in total. Reject filler and duplicate events. Preserve dated VIX as a short supplement after the news.
 
-Required GitHub Secrets: `GEMINI_API_KEY`, `EMAIL_USER`, `EMAIL_PASSWORD`, `EMAIL_TO`. Default model: `gemini-3.5-flash-lite`; optional override: `GEMINI_MODEL`. The daily workflow uses Google's official OpenAI-compatible endpoint and never reads the legacy OpenAI key.
+Uses direct publisher feeds and public FashionUnited section pages. Excludes configured paywall publishers (including Bloomberg), opaque Google News links, inaccessible pages and explicit subscription/login gates. Access checks never log in or bypass paywalls. Availability may change later or differ by region.
 
-Daily schedule: 00:00 UTC / 08:00 Asia/Shanghai; actual delivery can be delayed. Manual runs preview without sending by default. Download the `daily-news-preview` artifact to review the HTML.
+Gemini ranks a balanced candidate pool; code enforces section quotas. Chinese summaries retain source attribution and labelled inference/observation.
 
-For local use, install requirements, copy `.env.example` to `.env`, fill it privately, then run `python -m src.main --dry-run`. Run `python -m src.main` to send. AI service errors fail the task rather than sending a heuristic substitute. No-key local previews are explicitly marked as tests.
+Required GitHub Secrets: GEMINI_API_KEY, EMAIL_USER, EMAIL_PASSWORD, EMAIL_TO. No OpenAI key is read by the daily workflow. Schedule remains 00:00 UTC / 08:00 Asia/Shanghai; delivery may be delayed.
 
-Never commit credentials. Summaries use headlines and snippets, not full articles; inference must be identified, unsupported details omitted. Free-tier access depends on Google account eligibility and quotas; enabling paid billing can incur charges.
+Manual runs preview without sending by default. Read the Chinese preview on the run Summary page, or download the daily-news-preview artifact (HTML, Markdown and a JSON source/access audit). Locally install requirements and use python -m src.main --dry-run. Never commit .env or credentials.
