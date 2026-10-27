@@ -37,17 +37,19 @@ class _HTMLTextExtractor(HTMLParser):
 
 def classify_category(url: str, title: str, fallback: str = "政治") -> str:
     path = urlparse(url).path.lower()
+    text = title.lower()
     if any(part in path for part in ("/sport", "/football", "/basketball", "/tennis")):
         return "体育"
     if any(part in path for part in ("/fashion", "/style")):
         return "时尚"
+    if "/technology" in path and re.search(r'\b(ipo|initial public offering|stock market|valuation|earnings|buyouts?|layoffs?|job cuts|fundraising|quarterly profit)\b', text):
+        return "经济"
     if any(part in path for part in ("/technology", "/science", "/tech/")):
         return "科技"
     if any(part in path for part in ("/business", "/economy", "/economics")):
         return "经济"
     if fallback != "政治":
         return fallback
-    text = title.lower()
     if re.search(r'\b(world cup|championship|olympic|grand slam|nba|fifa|world series|football|basketball|tennis|marathon)\b', text):
         return "体育"
     if re.search(r'\b(inflation|interest rate|gdp|economy|trade deal|earnings|tariffs|unemployment|stock market)\b', text):
