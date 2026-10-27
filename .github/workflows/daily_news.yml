@@ -123,5 +123,6 @@ jobs:
           path: |
             daily_news_preview.html
             daily_news_preview.md
+            daily_news_preview.json
           if-no-files-found: error
           retention-days: 7
