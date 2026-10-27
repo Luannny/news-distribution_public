@@ -68,6 +68,10 @@ class BalancedSectionsTests(unittest.TestCase):
     def test_feed_category_is_corrected_for_cross_posted_technology_article(self):
         self.assertEqual(classify_category("https://www.theguardian.com/technology/2026/oct/27/ai", "AI announcement", "经济"), "科技")
 
+    def test_ipo_and_layoffs_do_not_occupy_technology_slots(self):
+        for title in ("Anthropic files for stock market IPO", "Microsoft offers buyouts to employees"):
+            self.assertEqual(classify_category("https://www.theguardian.com/technology/2026/oct/27/story", title, "科技"), "经济")
+
 
 class FreeArticleTests(unittest.TestCase):
     def test_paid_and_opaque_sources_are_rejected(self):
