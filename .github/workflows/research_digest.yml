@@ -1,0 +1,96 @@
+name: Research Digest
+
+on:
+  schedule:
+    # 05:00 UTC = 每天北京时间 13:00，GitHub 启动和送达可能延迟。
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+    inputs:
+      send_email:
+        description: "发送科研邮件（不勾选时只生成预览）"
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: research-digest
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  TZ: Asia/Shanghai
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SEND_EMAIL: ${{ github.event_name == 'schedule' || inputs.send_email }}
+      AI_PROVIDER: gemini
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_MODEL: ${{ secrets.GEMINI_MODEL || 'gemini-3.5-flash-lite' }}
+      EMAIL_HOST: smtp.gmail.com
+      EMAIL_PORT: '587'
+      EMAIL_USER: ${{ secrets.EMAIL_USER }}
+      EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+      EMAIL_TO: ${{ secrets.EMAIL_TO }}
+      EMAIL_FROM: ${{ secrets.EMAIL_USER }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Test research selection and dry-run safety
+        run: python -m unittest discover -s tests -p test_research.py
+      - name: Check existing Gemini and email configuration
+        run: |
+          python - <<'PY'
+          import os
+          required = ['GEMINI_API_KEY']
+          if os.getenv('SEND_EMAIL') == 'true':
+              required += ['EMAIL_USER', 'EMAIL_PASSWORD', 'EMAIL_TO']
+          missing = [name for name in required if not os.getenv(name, '').strip()]
+          if missing:
+              raise SystemExit('缺少 GitHub Secrets：' + ', '.join(missing))
+          PY
+      - name: Restore previously sent paper identifiers
+        uses: actions/cache/restore@v4
+        with:
+          path: .research-state/sent.json
+          key: research-sent-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            research-sent-v1-
+      - name: Generate research briefing or send email
+        run: |
+          if [ "$SEND_EMAIL" = "true" ]; then
+            python -m src.research
+          else
+            python -m src.research --dry-run
+          fi
+      - name: Save sent-paper history after successful delivery
+        if: env.SEND_EMAIL == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .research-state/sent.json
+          key: research-sent-v1-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Show Chinese preview on the results page
+        if: env.SEND_EMAIL != 'true'
+        run: cat research_preview.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Save research preview
+        if: env.SEND_EMAIL != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-preview
+          path: |
+            research_preview.html
+            research_preview.md
+            research_preview.json
+          if-no-files-found: error
+          retention-days: 7
