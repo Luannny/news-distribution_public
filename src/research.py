@@ -317,6 +317,8 @@ SYSTEM_PROMPT = """你为正在从事科研的读者写高质量中文论文导�
 如果有合适的超快电镜/衍射、蛋白折叠论文，应优先保留这两个方向，避免被泛泛光学材料内容挤掉。不强行凑齐每个方向。每个期刊最多2篇。
 请为每篇输出数字id、1–10的relevance/merit评分、中文标题、研究方法(method)、作者报告的主要发现(finding)、对本读者的具体价值(value)、局限与核查点(limits)。
 title、method、finding、value、limits五个字段必须全部用简体中文写作；可以保留UED、SUEM等专业缩写，不得复制整段英文摘要或把英文原题当作中文标题。
+专业名词无法确定规范中文名称时保留原英文，禁止望文生义。特别是分子名allene请保留allene，绝不能翻译成“全能”；ab initio multiple spawning (AIMS)请保留完整英文方法名，不能译成“多重孵化”。
+没有摘要证据时不要添加“首次”“突破”“高精度”等评价；输入只支持模拟结果时，不得写成实验已实现该性能。
 relevance衡量与兴趣的直接相关性，merit仅衡量摘要显示的创新/方法/证据具体程度，不宣称完成了同行评审或全文质量审查。两者至少7分才选，预印本至少8分。
 所有中文字段不能为空，必须准确归因于作者。保留摘要中已给出的关键方法/量级，但严禁补写没有提供的数字、图号、机构、样本量、分辨率、因果关系或研究局限。
 清楚区分实验、理论/模拟与综述。未提供局限的摘要应写“摘要未交代…，精读时应核查…”，不要虚构已证实的缺陷。不要复述摘要冒充批判性评价。
@@ -351,6 +353,9 @@ def validate_selection(result, pool, *, enforce_preprints=True):
         for key in ("title", "method", "finding", "value", "limits"):
             if sum('\u4e00' <= ch <= '\u9fff' for ch in row[key]) < (4 if key == "title" else 8):
                 raise ValueError("AI 未使用完整中文撰写导读，停止发送")
+        prose = " ".join(row[key] for key in ("title", "method", "finding", "value", "limits"))
+        if ("allene" in paper.abstract.lower() and "全能" in prose) or ("multiple spawning" in paper.abstract.lower() and "孵化" in prose):
+            raise ValueError("专业名词出现已知误译，停止发送")
         journal = normalize(paper.journal)
         if journals.get(journal, 0) >= 2 or topics.get(paper.topic, 0) >= 2 or (is_preprint and preprints >= 1):
             continue
@@ -389,7 +394,7 @@ def select_papers(pool):
             except ValueError:
                 if attempt:
                     raise
-                messages.append({"role":"user", "content":"上次导读未通过校验。请重新生成，确保所有论文编号合法不重复，title、method、finding、value、limits均使用完整简体中文句子，不能复制整段英文。"})
+                messages.append({"role":"user", "content":"上次导读未通过校验。请重新生成，确保所有论文编号合法不重复，title、method、finding、value、limits均使用完整简体中文句子，不能复制整段英文。专业名称不确定时保留原英文；allene不能译成全能，ab initio multiple spawning不能译成孵化。"})
         for _, row in checked:
             selected.append({**row, "id": indices[row["id"]]})
     return validate_selection({"papers":selected}, pool)
