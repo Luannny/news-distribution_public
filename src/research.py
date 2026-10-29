@@ -313,9 +313,10 @@ SYSTEM_PROMPT = """你为正在从事科研的读者写高质量中文论文导�
 质量和相关性比当天发表更重要。期刊名单只是入口，不能替代具体论文评估；不按影响因子盲选。
 仅依据输入的论文题目和作者摘要选择值得精读的3–6篇；不足3篇时宁缺毋滥，可以返回0篇。
 优先直接相关的超快电子显微/衍射、飞秒/阿秒结构动力学与谱学、蛋白折叠/构象动力学/分子伴侣研究；超快充电、泛泛材料制备、通用蛋白结构预测排名、普通肿瘤/药物筛选不因为关键词命中就入选。
-优先期刊论文；预印本只可作为补充，最多1篇，且只有存在至少2篇合适期刊论文时才选。不要把预印本或计算模拟说成已被实验验证。
+优先期刊论文；预印本只可作为补充，最多1篇。整封邮件的期刊篇数与预印本比例由程序统一检查。不要把预印本或计算模拟说成已被实验验证。
 如果有合适的超快电镜/衍射、蛋白折叠论文，应优先保留这两个方向，避免被泛泛光学材料内容挤掉。不强行凑齐每个方向。每个期刊最多2篇。
 请为每篇输出数字id、1–10的relevance/merit评分、中文标题、研究方法(method)、作者报告的主要发现(finding)、对本读者的具体价值(value)、局限与核查点(limits)。
+title、method、finding、value、limits五个字段必须全部用简体中文写作；可以保留UED、SUEM等专业缩写，不得复制整段英文摘要或把英文原题当作中文标题。
 relevance衡量与兴趣的直接相关性，merit仅衡量摘要显示的创新/方法/证据具体程度，不宣称完成了同行评审或全文质量审查。两者至少7分才选，预印本至少8分。
 所有中文字段不能为空，必须准确归因于作者。保留摘要中已给出的关键方法/量级，但严禁补写没有提供的数字、图号、机构、样本量、分辨率、因果关系或研究局限。
 清楚区分实验、理论/模拟与综述。未提供局限的摘要应写“摘要未交代…，精读时应核查…”，不要虚构已证实的缺陷。不要复述摘要冒充批判性评价。
@@ -332,9 +333,9 @@ def digest_schema():
             "type": "object", "additionalProperties": False, "required": list(fields), "properties": fields}}}}
 
 
-def validate_selection(result, pool):
+def validate_selection(result, pool, *, enforce_preprints=True):
     rows, seen, journals = [], set(), {}
-    preprints = 0
+    preprints, topics = 0, {}
     for row in result["papers"]:
         index = row["id"]
         if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < len(pool) or index in seen:
@@ -347,14 +348,18 @@ def validate_selection(result, pool):
             continue
         if any(not row[key].strip() for key in ("title", "method", "finding", "value", "limits")):
             raise ValueError("AI 论文导读字段不完整，停止发送")
+        for key in ("title", "method", "finding", "value", "limits"):
+            if sum('\u4e00' <= ch <= '\u9fff' for ch in row[key]) < (4 if key == "title" else 8):
+                raise ValueError("AI 未使用完整中文撰写导读，停止发送")
         journal = normalize(paper.journal)
-        if journals.get(journal, 0) >= 2 or (is_preprint and preprints >= 1):
+        if journals.get(journal, 0) >= 2 or topics.get(paper.topic, 0) >= 2 or (is_preprint and preprints >= 1):
             continue
         journals[journal] = journals.get(journal, 0) + 1
+        topics[paper.topic] = topics.get(paper.topic, 0) + 1
         preprints += is_preprint
         rows.append((paper, row))
     journal_count = sum(p.status.startswith("期刊") for p, _ in rows)
-    if journal_count < 2:
+    if enforce_preprints and journal_count < 2:
         rows = [(p, row) for p, row in rows if not p.status.startswith("预印本")]
     return sorted(rows, key=lambda pair: (not pair[0].status.startswith("期刊"), -pair[1]["relevance"], -pair[1]["merit"]))[:MAX_PAPERS]
 
@@ -363,13 +368,31 @@ def select_papers(pool):
     if not pool:
         return []
     settings = get_ai_settings()
-    payload = [{**asdict(p), "id": i} for i, p in enumerate(pool)]
-    for record in payload:
-        record["abstract"] = record["abstract"][:6500]
-    result = request_json(create_ai_client(settings), model=settings.model,
-        messages=[{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
-        schema=digest_schema(), name="research_digest", temperature=0.1)
-    return validate_selection(result, pool)
+    client, selected = create_ai_client(settings), []
+    for topic in ("超快电镜与电子衍射", "蛋白折叠与生物化学", "超快科学与物理化学"):
+        indices = [i for i, p in enumerate(pool) if p.topic == topic]
+        if not indices:
+            continue
+        subset = [pool[i] for i in indices]
+        payload = [{**asdict(p), "id": i, "abstract": p.abstract[:6500]} for i, p in enumerate(subset)]
+        schema = digest_schema()
+        schema["properties"]["papers"]["maxItems"] = 2
+        messages = [{"role": "system", "content": SYSTEM_PROMPT + "\n本次只筛选一个主题：" + topic +
+                     "。只选最值得精读的0–2篇，质量不足就少选。每个正文字段都必须写成中文。不要为填满两个名额而降低标准。"},
+                    {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}]
+        for attempt in range(2):
+            result = request_json(client, model=settings.model, messages=messages,
+                                  schema=schema, name="research_digest", temperature=0.1)
+            try:
+                checked = validate_selection(result, subset, enforce_preprints=False)
+                break
+            except ValueError:
+                if attempt:
+                    raise
+                messages.append({"role":"user", "content":"上次导读未通过校验。请重新生成，确保所有论文编号合法不重复，title、method、finding、value、limits均使用完整简体中文句子，不能复制整段英文。"})
+        for _, row in checked:
+            selected.append({**row, "id": indices[row["id"]]})
+    return validate_selection({"papers":selected}, pool)
 
 
 def render_digest(rows, today, warnings):
