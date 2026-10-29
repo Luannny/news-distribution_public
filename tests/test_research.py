@@ -28,8 +28,9 @@ def paper(index=1, status="期刊论文", journal="Faraday Discussions"):
 
 
 def selection(index, score=8):
-    return {"id": index, "relevance": score, "merit": score, "title": "中文题目",
-            "method": "方法", "finding": "作者报告发现", "value": "阅读价值", "limits": "摘要未说明重复性"}
+    return {"id": index, "relevance": score, "merit": score, "title": "超快电子衍射研究导读",
+            "method": "作者通过超快电子衍射测量分子结构", "finding": "作者报告了一项具体的实验观测结果",
+            "value": "对分子结构动力学分析具有参考价值", "limits": "摘要未说明测量重复性，精读时应核查"}
 
 
 class ResearchTests(unittest.TestCase):
@@ -84,9 +85,19 @@ class ResearchTests(unittest.TestCase):
 
     def test_preprints_need_two_journal_papers_and_at_most_one(self):
         pool = [paper(), paper(2,journal="Nature Methods"), paper(3,status="预印本，尚未同行评审",journal="arXiv"), paper(4,status="预印本，尚未同行评审",journal="bioRxiv")]
+        pool[2] = Paper(**{**pool[2].__dict__, 'topic':'蛋白折叠与生物化学'})
+        pool[3] = Paper(**{**pool[3].__dict__, 'topic':'超快科学与物理化学'})
         rows = validate_selection({"papers":[selection(i) for i in range(4)]}, pool)
         self.assertEqual(len(rows), 3)
         self.assertEqual(len(validate_selection({"papers":[selection(0),selection(2)]},pool)),1)
+
+    def test_english_body_is_rejected_before_delivery(self):
+        row=selection(0);row['method']='The authors use ultrafast electron diffraction.'
+        with self.assertRaises(ValueError): validate_selection({'papers':[row]},[paper()])
+
+    def test_one_topic_cannot_fill_the_digest(self):
+        pool=[paper(i,journal='Nature Methods' if i%2 else 'Faraday Discussions') for i in range(4)]
+        self.assertEqual(len(validate_selection({'papers':[selection(i) for i in range(4)]},pool)),2)
 
     def test_low_quality_and_journal_flood_filtered(self):
         pool=[paper(i) for i in range(5)]
