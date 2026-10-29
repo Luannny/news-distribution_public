@@ -95,6 +95,12 @@ class ResearchTests(unittest.TestCase):
         row=selection(0);row['method']='The authors use ultrafast electron diffraction.'
         with self.assertRaises(ValueError): validate_selection({'papers':[row]},[paper()])
 
+    def test_known_scientific_mistranslations_are_not_sent(self):
+        p=Paper(**{**paper().__dict__,'abstract':'We model allene with ab initio multiple spawning. '*15})
+        for phrase in ('通过对全能分子开展电子衍射实验进行观测','作者结合从头算多重孵化方法进行动力学计算'):
+            row=selection(0);row['method']=phrase
+            with self.assertRaises(ValueError): validate_selection({'papers':[row]},[p])
+
     def test_one_topic_cannot_fill_the_digest(self):
         pool=[paper(i,journal='Nature Methods' if i%2 else 'Faraday Discussions') for i in range(4)]
         self.assertEqual(len(validate_selection({'papers':[selection(i) for i in range(4)]},pool)),2)
